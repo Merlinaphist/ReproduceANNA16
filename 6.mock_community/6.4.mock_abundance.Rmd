@@ -1,0 +1,467 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(RColorBrewer)
+library(gridExtra)
+library(readr)
+# library("philentropy")
+library(gridExtra)
+library(vegan)
+library(cowplot)
+```
+
+### stage 3
+
+```{r message=FALSE, warning=FALSE}
+even = read.csv("processed/even_complete.csv")
+staggered = read.csv("processed/staggered_complete.csv")
+picrust_pred = read_tsv("products/picrust_mock.tsv")
+colnames(picrust_pred) = c("GenBank ID","picrust_pred")
+```
+
+```{r}
+paprica = read.csv("products/mock_full_length.bacteria.edge_data.csv")
+colnames(paprica)[1] = "global_edge_num"
+
+placement = read.csv("products/mock_full_length.bacteria.combined_16S.bacteria.tax.placements.csv")
+placement = placement[,c("global_edge_num", "like_weight_ratio", "likelihood", "map_ratio", "map_id", "EDPL","Pquery","seq")]
+
+paprica_placement = left_join(placement,paprica,by = c("global_edge_num"))
+
+paprica_placement = paprica_placement[,c("seq","n16S")]
+
+colnames(paprica_placement) = c("sequence","paprica_pred")
+```
+
+```{r}
+strain_info = even[,c(1:3,5:8)]
+colnames(strain_info) =
+c("Strain","GenBank ID","16S copies/cell","sequence","anna16_pred","copyrighter_pred","rrndb_pred")
+strain_info = left_join(strain_info,picrust_pred,by="GenBank ID")
+strain_info = left_join(strain_info,paprica_placement,by="sequence")
+
+
+strain_info$anna16_percent_error = abs(strain_info$`16S copies/cell` - strain_info$anna16_pred)/strain_info$`16S copies/cell`
+
+strain_info$copyrighter_percent_error = abs(strain_info$`16S copies/cell` - strain_info$copyrighter_pred)/strain_info$`16S copies/cell`
+
+strain_info$rrndb_percent_error = abs(strain_info$`16S copies/cell` - strain_info$rrndb_pred)/strain_info$`16S copies/cell`
+
+strain_info$picrust_percent_error = abs(strain_info$`16S copies/cell` - strain_info$picrust_pred)/strain_info$`16S copies/cell`
+
+strain_info$paprica_percent_error = abs(strain_info$`16S copies/cell` - strain_info$paprica_pred)/strain_info$`16S copies/cell`
+```
+
+
+```{r}
+abundance = rbind(even[,c(1,3,4,6,7,8)],staggered[,c(1,3,4,6,7,8)])
+
+colnames(abundance) = c("Strain", "16S copies/cell", "True cell counts",  "anna16_pred","copyrighter_pred","rrndb_pred")
+
+abundance$picrust_pred = rep(strain_info$picrust_pred,2)
+abundance$paprica_pred = rep(strain_info$paprica_pred,2)
+
+abundance$type = c(rep("even",10), rep("staggered",10))
+
+abundance = abundance%>%
+  group_by(type)%>%
+  mutate(`True copy counts` = `True cell counts` * `16S copies/cell`,
+         `Uncorrected copy fraction` = `True copy counts`/sum(`True copy counts`),
+         `True cell fraction` = `Uncorrected copy fraction`/(`16S copies/cell` * sum(`Uncorrected copy fraction`/`16S copies/cell`)),
+         `ANNA16 Estimated Fraction` = `Uncorrected copy fraction`/(anna16_pred * sum(`Uncorrected copy fraction`/anna16_pred)),
+         `CopyRighter Estimated Fraction` = `Uncorrected copy fraction`/(copyrighter_pred * sum(`Uncorrected copy fraction`/copyrighter_pred)),
+         `PICRUSt Estimated Fraction` = `Uncorrected copy fraction`/(picrust_pred * sum(`Uncorrected copy fraction`/picrust_pred)),
+         `PAPRICA Estimated Fraction` = `Uncorrected copy fraction`/(paprica_pred * sum(`Uncorrected copy fraction`/paprica_pred)),
+         `rrnDB Estimated Fraction` = `Uncorrected copy fraction`/(rrndb_pred * sum(`Uncorrected copy fraction`/rrndb_pred)))
+```
+
+```{r}
+quantity = gather(abundance[,c(1,9,11:17)],key = "Label",value = "Fraction",-Strain,-type)
+quantity = quantity%>%
+  mutate(Label = recode(Label,"rrnDB Estimated Fraction" = "rrnDB5.7",
+                        "CopyRighter Estimated Fraction" = "CopyRighter",
+                        "ANNA16 Estimated Fraction" = "ANNA16",
+                        "PICRUSt Estimated Fraction" = "PICRUSt2",
+                        "PAPRICA Estimated Fraction" = "PAPRICA",
+                        "True cell fraction" = "True",
+                        "Uncorrected copy fraction" = "Uncorrected"))
+```
+
+```{r}
+df = abundance[(abundance$type == "even"),c(12,11,13:17)]
+df = df*100000
+dissimilarity = vegdist(t(df), method="bray")
+dissimilarity = data.frame(as.matrix(dissimilarity)[2:7,1])
+colnames(dissimilarity) = "dissimilarity"
+dissimilarity$tool = row.names(dissimilarity)
+dissimilarity$type = "even"
+
+df = abundance[(abundance$type == "staggered"),c(12,11,13:17)]
+df = df*100000
+dissimilarity1 = vegdist(t(df), method="bray")
+dissimilarity1 = data.frame(as.matrix(dissimilarity1)[2:7,1])
+colnames(dissimilarity1) = "dissimilarity"
+dissimilarity1$tool = row.names(dissimilarity1)
+dissimilarity1$type = "staggered"
+
+dissimilarity = rbind(dissimilarity,dissimilarity1)
+rm(dissimilarity1)
+```
+
+```{r message=FALSE, warning=FALSE}
+# klds = c("group","tool","kld")
+# for (group in c("even", "staggered")){
+#   y = quantity[(quantity$Label == "True" & quantity$type == group),c("Fraction")]
+#   for (tool in c("rrnDB5.7", "CopyRighter", "ANNA16", "PICRUSt2", "PAPRICA")){
+#     x = quantity[(quantity$Label == tool & quantity$type == group),c("Fraction")]
+#     input = rbind(x$Fraction,y$Fraction)
+#     kld = KL(input, unit='log')
+#     klds = rbind(klds,c(group,tool,kld))
+#   }
+# }
+# colnames(klds) = klds[1,]
+# klds = data.frame(klds[2:11,])
+# rm(input,x,y,kld)
+```
+
+```{r}
+d1 = quantity%>%
+  mutate(Label = factor(Label, levels = c("Uncorrected", "True", "ANNA16", "PAPRICA","rrnDB5.7", "CopyRighter", "PICRUSt2")),
+         type = recode(type,"even" = "Even","staggered" = "Staggered"))%>%
+  filter(Label != "PICRUSt2")
+
+d2 = dissimilarity%>%
+  mutate(tool = factor(tool, levels = c("Uncorrected copy fraction", "ANNA16 Estimated Fraction", "PAPRICA Estimated Fraction","rrnDB Estimated Fraction", "CopyRighter Estimated Fraction", "PICRUSt2 Estimated Fraction"), labels = c("Uncorrected", "ANNA16", "PAPRICA","rrnDB5.7", "CopyRighter", "PICRUSt2")),
+         type = recode(type,"even" = "Even","staggered" = "Staggered"))%>%
+  filter(tool != "PICRUSt2")
+```
+
+```{r}
+pie_even = d1%>%
+  filter(type == "Even" & Label != "True")%>%
+  ggplot()+
+  geom_col(aes(x = 1, fill = Strain, y = Fraction))+
+  labs(y = "",x = "",title = "")+
+  scale_fill_brewer(palette = "Paired")+
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        legend.position = "none",
+        strip.text = element_text(angle = 90,size = 25,family="Times"),
+        strip.background = element_rect(fill = NA, color = NA)
+        )+
+  facet_wrap(~Label,ncol = 1, strip.position = "right")+
+  coord_polar("y", start=0)
+
+true_even = d1%>%
+  filter(type == "Even" & Label == "True")%>%
+  ggplot()+
+  geom_col(aes(x = 1, fill = Strain, y = Fraction))+
+  labs(y = "",x = "",title = "")+
+  scale_fill_brewer(palette = "Paired")+
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        legend.position = "none",
+        strip.text = element_blank(),
+        strip.background = element_rect(fill = NA, color = NA)
+        )+
+  coord_polar("y", start=0)
+
+
+pie_stagger = d1%>%
+  filter(type == "Staggered" & Label != "True")%>%
+  ggplot()+
+  geom_col(aes(x = 1, fill = Strain, y = Fraction))+
+  labs(y = "",x = "")+
+  scale_fill_brewer(palette = "Paired")+
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        legend.box.background = element_rect(color = "white"),
+        legend.position = "none",
+        legend.text = element_text(size = 30,family="Times"),
+        legend.title = element_blank(),
+        legend.key.height = unit(1,"cm"),
+        strip.text = element_text(angle = 90,size = 25,family="Times"),
+        strip.background = element_rect(fill = NA, color = NA)
+        )+
+  guides(fill = guide_legend(ncol = 2))+
+  facet_wrap(~Label,ncol = 1, strip.position = "left")+
+  coord_polar("y", start=0)
+
+true_stagger = d1%>%
+  filter(type == "Staggered" & Label == "True")%>%
+  ggplot()+
+  geom_col(aes(x = 1, fill = Strain, y = Fraction))+
+  labs(y = "",x = "",title = "")+
+  scale_fill_brewer(palette = "Paired")+
+    theme(
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        legend.position = "none",
+        strip.text = element_blank(),
+        strip.background = element_rect(fill = NA, color = NA)
+        )+
+  coord_polar("y", start=0)
+
+heatmap_even = d2%>%
+  filter(type == "Even")%>%
+  ggplot()+
+  geom_tile(aes(x = 1, y = type, fill = as.numeric(dissimilarity)), color = "black")+
+  geom_text(aes(x = 1, y = type, label = round(as.numeric(dissimilarity),3)), size = 10, color = "black", family = "Times")+
+  labs(y = "", x = "True",fill = "")+
+  scale_x_continuous(position = 'top', sec.axis = dup_axis())+
+    theme(axis.title = element_text(size = 30,family="Times"),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.line.x.bottom = element_blank(),
+        axis.title.x.bottom = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(color = "black"),
+        legend.position = "none",
+        strip.placement = "outside",
+        strip.text = element_blank(),
+        strip.background = element_rect(fill = NA, color = NA)
+        )+
+  facet_wrap(~tool,ncol = 1, strip.position = "left")+
+  scale_fill_gradient(low = "white",high="tomato")
+
+heatmap_staggered = d2%>%
+  filter(type == "Staggered")%>%
+  ggplot()+
+  geom_tile(aes(x = 1, y = type, fill = as.numeric(dissimilarity)), color = "black")+
+  geom_text(aes(x = 1, y = type, label = round(as.numeric(dissimilarity),3)), size = 10, color = "black", family = "Times")+
+  labs(y = "", x = "True",fill = "")+
+  scale_x_continuous(position = 'top', sec.axis = dup_axis())+
+    theme(axis.title = element_text(size = 30,family="Times"),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.line.x.bottom = element_blank(),
+        axis.title.x.bottom = element_blank(),
+        panel.background = element_rect(fill = NA),
+        panel.grid = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(color = "black"),
+        legend.position = "none",
+        strip.text = element_blank(),
+        strip.placement = "outside",
+        strip.background = element_rect(fill = NA, color = NA)
+        )+
+  facet_wrap(~tool, ncol = 1, strip.position = "right")+
+  guides(y = "none",y.sec = "axis")+
+  scale_fill_gradient(low = "white",high="tomato")
+
+pdf(15,15,file = "figures/stage3.smac3.pdf")
+
+# joint
+
+# plot_grid(NULL, true_even, true_stagger, NULL, pie_even, heatmap_even, heatmap_staggered, pie_stagger, ncol = 4, rel_widths = c(1.1,1,1,1.1), rel_heights = c(1,3), align = "hv", axis = "tblr")
+
+pleft = plot_grid(NULL, true_even, pie_even, heatmap_even, ncol = 2, rel_widths = c(1.1,1), rel_heights = c(1,3), align = "hv", axis = "tblr")
+
+even_title <- ggdraw() + 
+  draw_label(
+    "Even",
+    fontface = 'bold',
+    fontfamily="Times",
+    x = 0,
+    size = 30,
+    hjust = 0)
+
+even_title = plot_grid(NULL,NULL,even_title,NULL,NULL,nrow = 1)
+
+pleft = plot_grid(
+  pleft,even_title,
+  ncol = 1,
+  rel_heights = c(1,0.1)
+)
+
+pright = plot_grid(true_stagger, NULL, heatmap_staggered, pie_stagger, ncol = 2, rel_widths = c(1,1.1), rel_heights = c(1,3), align = "hv", axis = "tblr")
+
+staggered_title <- ggdraw() + 
+  draw_label(
+    "Staggered",
+    fontface = 'bold',
+    fontfamily="Times",
+    x = 0,
+    size = 30,
+    hjust = 0)
+
+staggered_title = plot_grid(NULL,NULL,staggered_title,NULL,NULL,nrow = 1)
+
+pright = plot_grid(
+  pright,staggered_title,
+  ncol = 1,
+  rel_heights = c(1, 0.1)
+)
+
+plot_grid(pleft, pright, ncol = 2, rel_widths = c(1,1), align = "hv", axis = "tblr")
+
+```
+
+```{r}
+pdf(10,10,file = "figures/stage3.sw.pdf")
+quantity%>%
+  filter(type == "staggered")%>%
+  mutate(Label = factor(Label, levels = c("Uncorrected", "True", "ANNA16", "PAPRICA","rrnDB5.7", "CopyRighter", "PICRUSt2")),
+         type = recode(type,"even" = "Even Communities","staggered" = "Staggered Communities"))%>%
+  filter(Label != "PICRUSt2")%>%
+  ggplot()+
+  geom_col(aes(x = Label, fill = Strain, y = Fraction))+
+  scale_fill_brewer(palette = "Paired")+
+    theme(axis.title = element_text(size = 20),
+        axis.text.y = element_text(size = 20),
+        axis.text.x = element_text(size = 15),
+        panel.background = element_rect(fill = "white"),
+        panel.grid = element_line(color = "grey"),
+        panel.border = element_rect(color = "black", fill = F),
+        legend.box.background = element_rect(color = "white"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 13),
+        legend.title = element_text(size = 13),
+        legend.key.height = unit(0.8,"cm"),
+        strip.text = element_text(size = 20),
+        strip.background = element_rect(fill = NA, color = "black")
+        )+
+  guides(fill = guide_legend(ncol = 2))+
+  labs(x = "")
+```
+
+```{r}
+pdf(16,12,file = "figures/stage3.comp3.legend.pdf")
+quantity%>%
+  mutate(Label = factor(Label, levels = c("Uncorrected", "True", "ANNA16", "PAPRICA","rrnDB5.7", "CopyRighter", "PICRUSt2")),
+         type = recode(type,"even" = "Even Communities","staggered" = "Staggered Communities"))%>%
+  filter(Label != "PICRUSt2")%>%
+  ggplot()+
+  geom_col(aes(x = Label, fill = Strain, y = Fraction))+
+  scale_fill_brewer(palette = "Paired")+
+    theme(axis.title = element_text(size = 20),
+        axis.text.y = element_text(size = 20),
+        axis.text.x = element_text(size = 15),
+        panel.background = element_rect(fill = "white"),
+        panel.grid = element_line(color = "grey"),
+        panel.border = element_rect(color = "black", fill = F),
+        legend.box.background = element_rect(color = "white"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 15),
+        legend.title = element_text(size = 15),
+        legend.key.height = unit(0.8,"cm"),
+        strip.text = element_text(size = 20),
+        strip.background = element_rect(fill = NA, color = "black")
+        )+
+  guides(fill = guide_legend(ncol = 3))+
+  labs(x = "")+
+  facet_wrap(~type, ncol = 1)
+```
+
+```{r}
+abundance_table = abundance[,c(1,7,9:13)]
+```
+
+
+# Yajuan Talk
+
+```{r}
+pdf(15,15,file = "figures/case_study_talk.pdf")
+quantity%>%
+  mutate(Label = factor(Label, levels = c("Uncorrected","True","ANNA16","rrnDB5.7","CopyRighter")),
+         type = recode(type,"even" = "Even Communities","staggered" = "Staggered Communities"))%>%
+  filter(Label%in%c("Uncorrected","True","ANNA16"))%>%
+  ggplot()+
+  geom_col(aes(x = Label, fill = Strain, y = Fraction))+
+  scale_fill_brewer(palette = "Paired")+
+    theme(axis.title = element_text(size = 30),
+        axis.text.y = element_text(size = 30),
+        axis.text.x = element_text(size = 25),
+        panel.background = element_rect(fill = "white"),
+        panel.grid = element_line(color = "grey"),
+        panel.border = element_rect(color = "black", fill = F),
+        legend.box.background = element_rect(color = "white"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 25),
+        legend.key.height = unit(2,"cm"),
+        strip.text = element_text(size = 30),
+        strip.background = element_rect(fill = NA, color = "black")
+        )+
+  guides(fill = guide_legend(ncol = 2))+
+  labs(x = "")+
+  facet_wrap(~type)
+```
+
+# Boxplots
+
+```{r}
+# anna16_pred = read.csv("products/anna16_pred.csv")
+# rrndb_pred = read.csv("products/rrndb_pred.csv")
+# copyrighter_pred = read.csv("products/copyrighter_pred.csv")
+# 
+# anna16_pred = gather(anna16_pred,key = "region", value = "pred_copy_number")
+# rrndb_pred = gather(rrndb_pred,key = "region", value = "pred_copy_number")
+# copyrighter_pred = gather(copyrighter_pred,key = "region", value = "pred_copy_number")
+# 
+# anna16_pred$tool = "anna16"
+# rrndb_pred$tool = "rrndb"
+# copyrighter_pred$tool = "copyrighter"
+# 
+# pred_region_compare = rbind(anna16_pred,rrndb_pred,copyrighter_pred)
+# 
+# rm(anna16_pred,rrndb_pred,copyrighter_pred)
+# 
+# pred_region_compare$true_copy_number = rep(even$X16S.copies.cell,24)
+# 
+# pred_region_compare$rmse = sqrt((pred_region_compare$pred_copy_number - pred_region_compare$true_copy_number)^2/10)
+# 
+# pred_region_compare$percent_error = abs(pred_region_compare$pred_copy_number - pred_region_compare$true_copy_number)/pred_region_compare$true_copy_number
+# 
+# pred_region_compare$region = str_replace_all(pred_region_compare$region, "[.]", "-")
+# pred_region_compare$region = str_replace_all(pred_region_compare$region, "[_]", "-")
+# 
+# pred_region_compare$tool = factor(pred_region_compare$tool,labels = c("ANNA16","CopyRighter","rrnDB5.7"))
+```
+
+
+```{r}
+# pdf(9,16,file = "figures/stage3.subregions1.pdf")
+# ggplot()+
+#   geom_errorbar(data = pred_region_compare%>%group_by(tool,region)%>%summarise(mean = mean(rmse), sd = sd(rmse)), aes(x = tool, y = mean, ymin = mean-sd, ymax = mean+sd))+
+#   geom_line(data = pred_region_compare%>%group_by(tool,region)%>%summarise(mean = mean(rmse), sd = sd(rmse)), aes(x = tool, y = mean, group = region))+
+#   geom_point(data = pred_region_compare, aes(x = tool, y = rmse), shape = 21, size = 3)+
+#   # geom_boxplot(data = pred_region_compare, aes(x = tool, y = rmse))+
+#   theme_bw()+
+#   labs(y = "RMSE",x = "Tools",title = "")+
+#   theme(axis.title = element_text(size = 10),
+#         axis.text.y = element_text(size = 10),
+#         axis.text.x = element_text(size = 10),
+#         panel.background = element_rect(fill = "white"),
+#         panel.grid = element_line(color = "grey"),
+#         panel.border = element_rect(color = "black", fill = F),
+#         legend.box.background = element_rect(color = "white"),
+#         legend.position = "none",
+#         strip.text = element_text(size = 10),
+#         strip.background = element_rect(fill = NA))+
+#   facet_wrap(~region,ncol = 2)
+```
