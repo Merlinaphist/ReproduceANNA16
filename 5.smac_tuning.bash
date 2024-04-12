@@ -36,13 +36,11 @@ class CopyNumberPredictor():
                      config["activation_2"], config["n_neurons_3"], config["activation_3"],
                      config["n_neurons_4"], config["activation_4"], config["n_neurons_5"], 
                      config["activation_5"]]
-        # self.state = [55, 0.0001, 0.1, 100, 469, 1, 956, 0, 649, 0, 941, 3, 597, 1, 65, 4]
         self.activation_indices={0:"relu",1:"gelu",2:"selu",3:"elu",4:"linear"}
         self.mlp = self.create_mlp()
         self.ridge = Ridge(alpha = config["alpha"])
         self.pca = PCA(n_components=100)
         self.svr = SVR(kernel='rbf',C=config["C"],gamma=config["gamma"])
-        # self.svr = thundersvm.SVR(kernel='rbf',C=config["C"],gamma=config["gamma"])
         
     def save(self,filename):
         if filename[-4:] != ".zip":

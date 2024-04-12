@@ -167,7 +167,7 @@ def read_region(region):
             tmp_seq+=line.split("\n")[0]
     seq.append(tmp_seq)
     file_handle.close()
-    sub = pd.DataFrame([seq,seqid], index = [region,"accession"])
+    sub = pd.DataFrame([seq,seqid], index = ["sequence","accession"])
     sub = sub.transpose()
     da = da[["accession","copy_number"]]
     da = pd.merge(da,sub,on="accession",how="inner")
