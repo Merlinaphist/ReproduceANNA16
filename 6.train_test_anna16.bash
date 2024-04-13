@@ -9,6 +9,7 @@ from math import sqrt
 from anna16 import CopyNumberPredictor
 import warnings
 warnings.filterwarnings("ignore")
+performance = {}
 
 path = "data/cv/datasets/kmer_splits"
 for region in ["full_length","V1-V2","V1-V3","V3-V4","V4","V4-V5","V6-V8","V7-V9"]:
@@ -17,7 +18,7 @@ for region in ["full_length","V1-V2","V1-V3","V3-V4","V4","V4-V5","V6-V8","V7-V9
         X_train = pd.read_pickle(f"{path}/{region}_X_train_{i}.gz")
         Y_train = pd.read_pickle(f"{path}/{region}_Y_train_{i}.gz")
         X_test = pd.read_pickle(f"{path}/{region}_X_test_{i}.gz")
-        Y_test = pd.read_pickle(f"{path}/{region}_X_test_{i}.gz")
+        Y_test = pd.read_pickle(f"{path}/{region}_Y_test_{i}.gz")
         model = CopyNumberPredictor(region)
         model.fit(X_train,Y_train,verbose=False)
         pred = model.predict(X_test)
@@ -26,7 +27,7 @@ for region in ["full_length","V1-V2","V1-V3","V3-V4","V4","V4-V5","V6-V8","V7-V9
 
         pred_records = pd.DataFrame(np.array([Y_test,pred]).transpose(), columns=["Y_test","Y_pred"])
         pred_records["group"] = i
-        pred_records.to_csv("performance/cv/predictions/anna16/{region}_{i}.csv",index=False)
+        pred_records.to_csv(f"performance/cv/predictions/anna16/{region}_{i}.csv",index=False)
     performance[region] = rmse
 
 pd.DataFrame(performance).to_csv("performance/cv/anna16.csv",index=False)
@@ -46,7 +47,7 @@ for region in ["full_length","V1-V2","V1-V3","V3-V4","V4","V4-V5","V6-V8","V7-V9
 
     pred_records = pd.DataFrame(np.array([Y_test,pred]).transpose(), columns=["Y_test","Y_pred"])
     pred_records["group"] = i
-    pred_records.to_csv("performance/test/predictions/anna16/{region}.csv",index=False)
+    pred_records.to_csv(f"performance/test/predictions/anna16/{region}.csv",index=False)
     performance[region] = rmse
 
 pd.DataFrame(performance).to_csv("performance/test/anna16.csv")
