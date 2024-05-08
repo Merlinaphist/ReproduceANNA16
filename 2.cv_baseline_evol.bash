@@ -83,7 +83,8 @@ for (k in 1:6){
       predicted = data.frame(predicted)
       predicted$accession = row.names(predicted)
       test = dplyr::left_join(test,predicted,by = "accession")
-      rmse = sqrt(mean((test$copy_number-test$predicted)^2))
+      write.csv(test, paste0("performance/cv/predictions/hsp/", region, "_", method, "_", i, ".csv"), row.names=F)
+      rmse = sqrt(mean((test$copy_number-test$predicted)^2, na.rm=TRUE))
       performance[i+1,j]=rmse
     }
   }

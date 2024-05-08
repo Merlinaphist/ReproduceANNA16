@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import pickle, os, shutil, shap
+import pickle, os, shutil
 from math import sqrt
 from zipfile import ZipFile
 from tensorflow.keras.models import Sequential, load_model
